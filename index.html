@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🚒 Simulation départ VSAV</title>
+<style>
+body{
+    font-family: Arial, sans-serif;
+    background:#0f172a;
+    color:white;
+    text-align:center;
+    padding:20px;
+    position: relative;
+}
+
+button{
+    border:none;
+    border-radius:12px;
+    padding:16px 25px;
+    font-size:22px;
+    margin:10px;
+    width:90%;
+    max-width:350px;
+}
+
+#dispatchBtn{background:#e11d48;color:white;}
+#examBtn{background:#fb923c;color:white;}
+#mapBtn{background:#22c55e;color:white; display:none;}
+#answerBtn{background:#3b82f6;color:white; display:none;}
+#whoPaysBtn{background:#fbbf24;color:white;}
+#eliminateBtn{background:#ef4444;color:white; display:none;}
+#nextPlayerBtn{background:#3b82f6;color:white; display:none;}
+#mapBtn:disabled, #answerBtn:disabled, #whoPaysBtn:disabled, #eliminateBtn:disabled, #nextPlayerBtn:disabled{background:#555;}
+
+select, input{
+    font-size:18px;
+    padding:8px;
+    border-radius:8px;
+    margin:10px 0;
+}
+
+#result{
+    margin-top:20px;
+    font-size:32px;
+    line-height:1.4;
+}
+
+#timer{
+    font-size:40px;
+    margin-top:20px;
+    color:#facc15;
+}
+
+#playerList{
+    margin-top:10px;
+    font-size:20px;
+    color:#fef3c7;
+}
+
+#actionButtons{
+    margin-top:10px;
+}
+
+#easterEgg{
+    position:fixed;
+    bottom:10px;
+    left:10px;
+    font-size:12px;
+    color:#f87171;
+    cursor:pointer;
+}
+</style>
+</head>
+<body>
+
+<h1>🚒 Simulation départ</h1>
+
+<div>
+Temps de réflexion :
+<select id="timeSelect">
+  <option value="0">Pas de chrono</option>
+  <option value="10">10 sec</option>
+  <option value="15">15 sec</option>
+  <option value="20">20 sec</option>
+  <option value="30">30 sec</option>
+</select>
+</div>
+
+<button id="dispatchBtn" onclick="whoPaysMode?dispatchForCurrentPlayer():dispatch()" disabled>ÇA DÉCALE 🚨</button>
+<button id="examBtn" onclick="whoPaysMode?dispatchExamForCurrentPlayer():dispatchExam()" disabled>ÇA PART DIRECT 🚨</button>
+<button id="whoPaysBtn" onclick="startWhoPays()" disabled>Qui paye ? 🍺</button>
+<button id="eliminateBtn" onclick="eliminateCurrentPlayer()">Éliminer le joueur actuel ❌</button>
+<button id="nextPlayerBtn" onclick="nextPlayerWithoutElimination()">Joueur suivant ➡️</button>
+
+<div id="timer"></div>
+<div id="result"></div>
+
+<div id="actionButtons">
+    <button id="mapBtn" onclick="openMap()">Afficher sur la carte</button>
+    <button id="answerBtn" onclick="showAnswer()">Afficher la ville</button>
+</div>
+
+<div id="playerList"></div>
+
+<div id="easterEgg" onclick="showEasterEgg()">👀</div>
+
+<script>
+let streetsByCity = {};
+let currentAddress = "";
+let hiddenCity = "";
+let countdownInterval;
+
+// Participants mode “Qui paye”
+let players = [];
+let currentPlayerIndex = 0;
+let whoPaysMode = false;
+
+// 🔎 récupération rues OpenStreetMap
+async function fetchCity(city){
+    const query = `
+    [out:json][timeout:25];
+    area["name"="${city}"]["boundary"="administrative"]["admin_level"="8"]->.searchArea;
+    ( way["highway"]["name"](area.searchArea); );
+    out tags;
+    `;
+    const res = await fetch("https://overpass-api.de/api/interpreter", {method:"POST", body:query});
+    const data = await res.json();
+
+    const streets = [...new Set(
+        data.elements
+        .map(e=>e.tags.name)
+        .filter(n => n && (n.startsWith("Rue") || n.startsWith("Avenue") || n.startsWith("Boulevard")))
+        .map(name=>({city, name}))
+    )];
+
+    streetsByCity[city] = streets;
+}
+
+// 🔑 Initialisation : charger toutes les communes avant d'activer les boutons
+async function init(){
+    await fetchCity("Sarcelles");
+    await fetchCity("Villiers-le-Bel");
+    await fetchCity("Écouen");
+
+    // Activer boutons après chargement complet
+    document.getElementById("dispatchBtn").disabled = false;
+    document.getElementById("examBtn").disabled = false;
+    document.getElementById("whoPaysBtn").disabled = false;
+}
+init();
+
+// 🚨 MODE NORMAL
+function dispatch(){
+    clearInterval(countdownInterval);
+    document.getElementById("timer").innerHTML="";
+    const cities = Object.keys(streetsByCity);
+    if(cities.length === 0){ document.getElementById("result").innerHTML="Chargement..."; return; }
+
+    const randomCity = cities[Math.floor(Math.random()*cities.length)];
+    const cityStreets = streetsByCity[randomCity];
+    const randStreet = cityStreets[Math.floor(Math.random()*cityStreets.length)];
+
+    currentAddress = randStreet.name + ", " + randomCity;
+    hiddenCity = randomCity;
+
+    document.getElementById("result").innerHTML = `${randStreet.name}<br><b>${randomCity}</b>`;
+    startTimer();
+    showButtons("decale"); // mode Ça décale
+}
+
+// 🎓 MODE EXAMEN
+function dispatchExam(){
+    clearInterval(countdownInterval);
+    document.getElementById("timer").innerHTML="";
+    const cities = Object.keys(streetsByCity);
+    if(cities.length === 0){ document.getElementById("result").innerHTML="Chargement..."; return; }
+
+    const randomCity = cities[Math.floor(Math.random()*cities.length)];
+    const cityStreets = streetsByCity[randomCity];
+    const randStreet = cityStreets[Math.floor(Math.random()*cityStreets.length)];
+
+    hiddenCity = randomCity;
+    currentAddress = randStreet.name + ", " + randomCity;
+
+    document.getElementById("result").innerHTML = `${randStreet.name}<br><i>Ville cachée</i>`;
+    startTimer();
+    showButtons("exam"); // boutons visibles
+}
+
+// ⏱️ TIMER
+function startTimer(){
+    const seconds = document.getElementById("timeSelect").value;
+    if(seconds==0){ return; }
+
+    let timeLeft = seconds;
+    document.getElementById("timer").innerHTML = timeLeft+"s";
+
+    countdownInterval = setInterval(()=>{
+        timeLeft--;
+        document.getElementById("timer").innerHTML = timeLeft+"s";
+        if(timeLeft<=0){
+            clearInterval(countdownInterval);
+            document.getElementById("timer").innerHTML="⏱️ Temps écoulé";
+        }
+    },1000);
+}
+
+// 🗺️ Ouvrir Google Maps
+function openMap(){
+    const url = "https://www.google.com/maps/search/" + encodeURIComponent(currentAddress);
+    window.open(url,"_blank");
+}
+
+// ✅ Afficher la ville
+function showAnswer(){
+    if(hiddenCity){
+        document.getElementById("result").innerHTML = 
+            document.getElementById("result").innerHTML.replace("<i>Ville cachée</i>", `<b>${hiddenCity}</b>`);
+    }
+}
+
+// Montrer les boutons après tirage
+function showButtons(mode="normal"){
+    if(mode === "exam" || whoPaysMode){
+        document.getElementById("mapBtn").style.display = "inline-block";
+        document.getElementById("answerBtn").style.display = "inline-block";
+    } else if(mode === "decale"){
+        document.getElementById("mapBtn").style.display = "inline-block";
+        document.getElementById("answerBtn").style.display = "none";
+    } else {
+        document.getElementById("mapBtn").style.display = "none";
+        document.getElementById("answerBtn").style.display = "none";
+    }
+    document.getElementById("mapBtn").disabled=false;
+    document.getElementById("answerBtn").disabled=false;
+}
+
+// 🎯 MODE QUI PAYE
+function startWhoPays(){
+    const input = prompt("Entrez les prénoms des participants séparés par des virgules :", "Nils,Alex,Julie");
+    if(!input) return;
+    players = input.split(",").map(p => p.trim()).filter(p=>p!=="");
+    if(players.length===0) return;
+
+    currentPlayerIndex = 0;
+    whoPaysMode = true;
+    document.getElementById("playerList").innerHTML = "Participants : " + players.join(", ");
+    document.getElementById("eliminateBtn").style.display = "inline-block";
+    document.getElementById("nextPlayerBtn").style.display = "inline-block";
+    showButtons("exam");
+    nextWhoPaysTurn();
+}
+
+// Générer une rue pour le joueur actuel (mode Qui paye)
+function dispatchForCurrentPlayer(){
+    if(players.length===0) return;
+    const player = players[currentPlayerIndex];
+    generateStreetForPlayer(player, false);
+}
+
+function dispatchExamForCurrentPlayer(){
+    if(players.length===0) return;
+    const player = players[currentPlayerIndex];
+    generateStreetForPlayer(player, true);
+}
+
+// Génération centrale
+function generateStreetForPlayer(player, examMode){
+    const cities = Object.keys(streetsByCity);
+    const randomCity = cities[Math.floor(Math.random()*cities.length)];
+    const cityStreets = streetsByCity[randomCity];
+    const randStreet = cityStreets[Math.floor(Math.random()*cityStreets.length)];
+
+    hiddenCity = randomCity;
+    currentAddress = randStreet.name + ", " + randomCity;
+
+    if(examMode){
+        document.getElementById("result").innerHTML = `${randStreet.name}<br><i>Ville cachée</i><br><b>${player}</b>`;
+        showButtons("exam");
+    } else {
+        document.getElementById("result").innerHTML = `${randStreet.name}<br><b>${randomCity}</b><br><b>${player}</b>`;
+        showButtons("exam");
+    }
+    startTimer();
+}
+
+// Tour suivant
+function nextWhoPaysTurn(){
+    if(players.length===0){
+        document.getElementById("result").innerHTML = "<b>🎉 Tous éliminés, jeu terminé !</b>";
+        document.getElementById("eliminateBtn").style.display = "none";
+        document.getElementById("nextPlayerBtn").style.display = "none";
+        return;
+    }
+    currentPlayerIndex = currentPlayerIndex % players.length;
+    const player = players[currentPlayerIndex];
+    document.getElementById("result").innerHTML = `<i>C'est au tour de ${player}</i>`;
+}
+
+// Éliminer le joueur actuel
+function eliminateCurrentPlayer(){
+    if(players.length===0) return;
+    players.splice(currentPlayerIndex,1);
+    if(currentPlayerIndex >= players.length) currentPlayerIndex = 0;
+    document.getElementById("playerList").innerHTML = "Participants : " + players.join(", ");
+    nextWhoPaysTurn();
+}
+
+// Passer au joueur suivant sans éliminer
+function nextPlayerWithoutElimination(){
+    if(players.length === 0) return;
+    currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+    const player = players[currentPlayerIndex];
+    document.getElementById("result").innerHTML = `<i>C'est au tour de ${player}</i>`;
+}
+
+// 🎁 Easter egg
+function showEasterEgg(){
+    alert("Oisien serait fier de toi fils 😎");
+}
+</script>
+</body>
+</html>
