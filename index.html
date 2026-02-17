@@ -26,9 +26,7 @@ button{
 
 #dispatchBtn{background:#e11d48;color:white;}
 #examBtn{background:#fb923c;color:white;}
-#whoPaysBtn{background:#fbbf24;color:white;}
-#eliminateBtn{background:#ef4444;color:white;display:none;}
-#nextPlayerBtn{background:#3b82f6;color:white;display:none;}
+#routeBtn{background:#8b5cf6;color:white;}
 #mapBtn{background:#22c55e;color:white;display:none;}
 #answerBtn{background:#3b82f6;color:white;display:none;}
 
@@ -69,11 +67,9 @@ button{
 
 <br>
 
-<button id="dispatchBtn" disabled onclick="whoPaysMode?dispatchForCurrentPlayer():dispatch()">ÇA DÉCALE 🚨</button>
-<button id="examBtn" disabled onclick="whoPaysMode?dispatchExamForCurrentPlayer():dispatchExam()">ÇA PART DIRECT 🚨</button>
-<button id="whoPaysBtn" disabled onclick="startWhoPays()">Qui paye ? 🍺</button>
-<button id="eliminateBtn" onclick="eliminateCurrentPlayer()">Éliminer joueur ❌</button>
-<button id="nextPlayerBtn" onclick="nextPlayerWithoutElimination()">Joueur suivant ➡️</button>
+<button id="dispatchBtn" disabled onclick="dispatch()">ÇA DÉCALE 🚨</button>
+<button id="examBtn" disabled onclick="dispatchExam()">ÇA PART DIRECT 🚨</button>
+<button id="routeBtn" disabled onclick="dispatchRoute()">JE PARS / JE VAIS 🧭</button>
 
 <div id="timer"></div>
 <div id="result"></div>
@@ -90,12 +86,11 @@ button{
 let streetsByCity={}
 let currentAddress=""
 let hiddenCity=""
-let players=[]
-let currentPlayerIndex=0
-let whoPaysMode=false
-let countdownInterval
+let routeMode=false
+let startAddress=""
+let endAddress=""
 
-// 💾 stockage local
+// stockage local
 function saveStreetsToLocal(){
  localStorage.setItem("streetsData",JSON.stringify(streetsByCity))
 }
@@ -105,14 +100,12 @@ function loadStreetsFromLocal(){
  return false
 }
 
-// 📊 barre chargement
 function updateLoading(progress,text){
- document.getElementById("loadingText").innerHTML=text
- document.getElementById("loadingBox").style.display="block"
- document.getElementById("loadingBar").style.width=progress+"%"
+ loadingText.innerHTML=text
+ loadingBox.style.display="block"
+ loadingBar.style.width=progress+"%"
 }
 
-// 🔎 récupération OpenStreetMap
 async function fetchCity(city,progress){
  updateLoading(progress,"Téléchargement rues : "+city+"...")
  const query=`[out:json];area["name"="${city}"]["admin_level"="8"]->.a;(way["highway"]["name"](area.a););out tags;`
@@ -126,11 +119,9 @@ async function fetchCity(city,progress){
  streetsByCity[city]=streets
 }
 
-// 🚀 INIT
 async function init(){
-
  if(loadStreetsFromLocal()){
-  document.getElementById("loadingText").innerHTML="Rues chargées depuis le téléphone 🚀"
+  loadingText.innerHTML="Rues chargées depuis le téléphone 🚀"
   enableButtons()
   return
  }
@@ -143,8 +134,8 @@ async function init(){
  saveStreetsToLocal()
 
  setTimeout(()=>{
-  document.getElementById("loadingBox").style.display="none"
-  document.getElementById("loadingText").innerHTML="Rues prêtes 🚒"
+  loadingBox.style.display="none"
+  loadingText.innerHTML="Rues prêtes 🚒"
   enableButtons()
  },800)
 }
@@ -153,65 +144,75 @@ init()
 function enableButtons(){
  dispatchBtn.disabled=false
  examBtn.disabled=false
- whoPaysBtn.disabled=false
+ routeBtn.disabled=false
 }
 
-// 🎲 tirage
 function getRandomStreet(){
  const cities=Object.keys(streetsByCity)
  const city=cities[Math.floor(Math.random()*cities.length)]
  const street=streetsByCity[city][Math.floor(Math.random()*streetsByCity[city].length)]
- hiddenCity=city
- currentAddress=street.name+", "+city
- return street.name
+ return street
 }
 
+// MODE NORMAL
 function dispatch(){
+ routeMode=false
  const street=getRandomStreet()
- result.innerHTML=street+"<br><b>"+hiddenCity+"</b>"
+ hiddenCity=street.city
+ currentAddress=street.name+", "+street.city
+ result.innerHTML=street.name+"<br><b>"+street.city+"</b>"
  mapBtn.style.display="inline-block"
  answerBtn.style.display="none"
 }
 
 function dispatchExam(){
+ routeMode=false
  const street=getRandomStreet()
- result.innerHTML=street+"<br><i>Ville cachée</i>"
+ hiddenCity=street.city
+ currentAddress=street.name+", "+street.city
+ result.innerHTML=street.name+"<br><i>Ville cachée</i>"
  mapBtn.style.display="inline-block"
  answerBtn.style.display="inline-block"
 }
 
+// MODE JE PARS / JE VAIS
+function dispatchRoute(){
+ routeMode=true
+
+ let start=getRandomStreet()
+ let end=getRandomStreet()
+ while(start.name===end.name){ end=getRandomStreet() }
+
+ startAddress=start.name+", "+start.city
+ endAddress=end.name+", "+end.city
+
+ result.innerHTML=
+ "Je pars de :<br><b>"+start.name+"</b><br>"+start.city+
+ "<br><br>Je vais à :<br><b>"+end.name+"</b><br>"+end.city
+
+ mapBtn.style.display="inline-block"
+ answerBtn.style.display="none"
+}
+
 function showAnswer(){
- result.innerHTML=result.innerHTML.replace("Ville cachée","<b>"+hiddenCity+"</b>")
+ if(routeMode){
+  result.innerHTML=
+   "Je pars de :<br><b>"+startAddress+"</b><br><br>"+
+   "Je vais à :<br><b>"+endAddress+"</b>"
+ }else{
+  result.innerHTML=result.innerHTML.replace("Ville cachée","<b>"+hiddenCity+"</b>")
+ }
 }
+
 function openMap(){
- window.open("https://www.google.com/maps/search/"+encodeURIComponent(currentAddress))
-}
-
-// 🍺 mode Qui paye
-function startWhoPays(){
- const input=prompt("Participants séparés par virgule")
- if(!input)return
- players=input.split(",").map(p=>p.trim())
- whoPaysMode=true
- eliminateBtn.style.display="inline-block"
- nextPlayerBtn.style.display="inline-block"
- result.innerHTML="Tour de "+players[0]
-}
-
-function dispatchForCurrentPlayer(){ dispatch(); result.innerHTML+="<br>"+players[currentPlayerIndex] }
-function dispatchExamForCurrentPlayer(){ dispatchExam(); result.innerHTML+="<br>"+players[currentPlayerIndex] }
-
-function nextPlayerWithoutElimination(){
- currentPlayerIndex=(currentPlayerIndex+1)%players.length
- result.innerHTML="Tour de "+players[currentPlayerIndex]
-}
-function eliminateCurrentPlayer(){
- players.splice(currentPlayerIndex,1)
- nextPlayerWithoutElimination()
+ if(routeMode){
+  window.open("https://www.google.com/maps/dir/"+encodeURIComponent(startAddress)+"/"+encodeURIComponent(endAddress))
+ }else{
+  window.open("https://www.google.com/maps/search/"+encodeURIComponent(currentAddress))
+ }
 }
 
 function showEasterEgg(){ alert("Oisien serait fier de toi fils 😎") }
-
 </script>
 </body>
 </html>
